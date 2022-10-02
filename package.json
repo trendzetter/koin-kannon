@@ -1,0 +1,8 @@
+{
+    "type": "module",
+    "dependencies": {
+        "fetch": "^1.1.0",
+        "inquirer": "^9.1.2",
+        "pact-lang-api": "^4.3.5"
+    }
+}

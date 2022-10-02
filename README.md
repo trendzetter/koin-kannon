@@ -13,4 +13,5 @@ Replace the keypair in deploy.js with your own keypair. Update token.pact to dep
 # Run
 
 $ npm i
+
 $ node deploy.js

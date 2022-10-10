@@ -2,14 +2,13 @@ import fetch from 'node-fetch';
 import Pact from 'pact-lang-api';
 import { creationTime, makeRawRequestInit, mkReq, sleep } from "./util.js";
 
-let NETWORK_ID, HOST, callback;
+let NETWORK_ID, HOST;
 
-export async function sendCrossChain(State,sender, receiver, sourceChain, targetChainId, amount, cb) {
+export async function sendCrossChain(State, sender, receiver, sourceChain, targetChainId, amount) {
   NETWORK_ID = State.NETWORK_ID;
   const KEY_PAIR = State.KEY_PAIR;
   HOST = State.HOST;
-  callback = cb;
-  
+
   const cmd = {
     networkId: NETWORK_ID,
     keyPairs: Object.assign(KEY_PAIR, {
@@ -57,9 +56,9 @@ export async function sendCrossChain(State,sender, receiver, sourceChain, target
   console.log('listening');
   const txResult = await Pact.fetch.listen({ listen: requestKey }, API_HOST_SOURCE);
 
-  if(txResult.result.status === 'success'){
+  if (txResult.result.status === 'success') {
     console.log('step 1 completed for ' + targetChainId);
-  } else{
+  } else {
     console.log(txResult);
   }
 
@@ -72,10 +71,10 @@ export async function sendCrossChain(State,sender, receiver, sourceChain, target
   console.log('proof received for chain ' + targetChainId);
 
   //Send continuation
-  sendContinuation(State, targetChainId, requestKey, proof, );
+  sendContinuation(State, targetChainId, requestKey, proof,);
 }
 
-async function sendContinuation(State, targetChainId, requestKey, proof){
+async function sendContinuation(State, targetChainId, requestKey, proof) {
   const API_HOST_TARGET = `${HOST}/chainweb/0.0/${NETWORK_ID}/chain/${targetChainId}/pact`;
   const m = Pact.lang.mkMeta(
     "kadena-xchain-gas",
@@ -128,13 +127,13 @@ async function sendContinuation(State, targetChainId, requestKey, proof){
   }
 }
 
-const handleResult = async function (res,targetChainId) {
+const handleResult = async function (res, targetChainId) {
   const foo = await res;
   if (foo.ok) {
     const j = await res.json();
     var reqKey = j.requestKeys[0];
-   console.log('Step 2 pending...'+ reqKey);
-    listen(reqKey,targetChainId);
+    console.log('Step 2 pending...' + reqKey);
+    listen(reqKey, targetChainId);
   } else {
     t = await res.text();
     console.log('negative result: ' + t);
@@ -151,7 +150,7 @@ async function listen(reqKey, targetChainId) {
       //console.log(res);
       if (res.result.status === 'success') {
         console.log('crosschain succeeded on chain ' + targetChainId);
-        callback(targetChainId);
+        completedCrosschain(targetChainId);
       } else {
         console.log('TRANSFER FAILED with error');
         console.log(JSON.stringify(res.result.error.message));
@@ -159,7 +158,7 @@ async function listen(reqKey, targetChainId) {
     });
 }
 
- const sendNonJson = async function (cmd, apiHost) {
+const sendNonJson = async function (cmd, apiHost) {
   var c;
   if (!apiHost) throw new Error(`Pact.fetch.send(): No apiHost provided`);
   c = Pact.simple.cont.createCommand(
@@ -177,21 +176,34 @@ async function listen(reqKey, targetChainId) {
   return txRes;
 };
 
- async function getProof(targetChainId, pactId, host) {
-    const spvCmd = { targetChainId: targetChainId, requestKey: pactId };
-    try {
-      const res = await fetch(`${host}/spv`, mkReq(spvCmd));
-      let foo = await res;
-  
-      if (foo.ok) {
-        const proof = await res.json();
-        return proof;
-      } else {
-        const proof = await res.text();
-        //Initial Step is not confirmed yet.
-        throw proof;
-      }
-    } catch (e) {
-     console.log('error:' +e);
+async function getProof(targetChainId, pactId, host) {
+  const spvCmd = { targetChainId: targetChainId, requestKey: pactId };
+  try {
+    const res = await fetch(`${host}/spv`, mkReq(spvCmd));
+    let foo = await res;
+
+    if (foo.ok) {
+      const proof = await res.json();
+      return proof;
+    } else {
+      const proof = await res.text();
+      //Initial Step is not confirmed yet.
+      throw proof;
     }
+  } catch (e) {
+    console.log('error:' + e);
   }
+}
+
+function completedCrosschain(chain) {
+  funded[chain] = true;
+  let counter = 0;
+  while (counter < 20 && (funded[counter] === true || counter == State.fundsChain)) {
+    counter++;
+  }
+  if (counter === 20) {
+    console.log('distributing gas to 20 chains completed');
+  } else {
+    console.log('waiting for other chains')
+  }
+}

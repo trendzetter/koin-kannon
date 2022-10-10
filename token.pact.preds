@@ -1,0 +1,23 @@
+(namespace "free")
+
+(define-keyset "free.admin-fake-steak" (read-keyset "ks"))
+
+(module fake-steak-preds GOVERNANCE
+
+  @doc " fake-steak keys. "
+
+  (defcap GOVERNANCE
+    ()
+
+    @doc " Give the admin full access to call and upgrade the module. "
+
+    (enforce-keyset "free.admin-fake-steak")
+  )
+
+  (defun keys-majority:bool 
+    ( count:integer matched:integer )
+    @doc " Half of the keys plus one must sign. "
+    ( >= matched ( + ( / count 2 ) 1 ) )
+  )  
+
+)

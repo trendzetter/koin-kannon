@@ -1,6 +1,4 @@
-(namespace "free")
-
-(define-keyset "free.admin-fake-steak" (read-keyset "ks"))
+(namespace "###NAMESPACE###")
 
 (module fake-steak-test GOVERNANCE
 
@@ -38,7 +36,7 @@
 
     @doc " Give the admin full access to call and upgrade the module. "
 
-    (enforce-keyset "free.admin-fake-steak")
+    (enforce-keyset "###KEYSET###")
   )
 
   (defcap INTERNAL ()
@@ -446,4 +444,4 @@
 
 )
 
-(create-table token-table)
+;;(create-table token-table)

@@ -1,8 +1,8 @@
 (namespace "###NAMESPACE###")
 
-(module fake-steak-test GOVERNANCE
+(module test-kannon-v5 GOVERNANCE
 
-  @doc " fake-steak is adapted from Anedak pact contract. "
+  @doc " kannon is adapted from Anedak pact contract and the coin contract "
 
   @model
     [ (defproperty conserves-mass (amount:decimal)
@@ -15,6 +15,7 @@
     ]
 
   (implements fungible-v2)
+  (implements fungible-xchain-v1)
 
   ; --------------------------------------------------------------------------
   ; Schemas and Tables
@@ -94,6 +95,38 @@
     )
   )
 
+  (defcap TRANSFER_XCHAIN:bool
+    ( sender:string
+      receiver:string
+      amount:decimal
+      target-chain:string
+    )
+
+    @managed amount TRANSFER_XCHAIN-mgr
+    (enforce-unit amount)
+    (enforce (> amount 0.0) "Cross-chain transfers require a positive amount")
+    (compose-capability (DEBIT sender))
+  )
+
+  (defun TRANSFER_XCHAIN-mgr:decimal
+    ( managed:decimal
+      requested:decimal
+    )
+
+    (enforce (>= managed requested)
+      (format "TRANSFER_XCHAIN exceeded for balance {}" [managed]))
+    0.0
+  )
+
+  (defcap TRANSFER_XCHAIN_RECD:bool
+    ( sender:string
+      receiver:string
+      amount:decimal
+      source-chain:string
+    )
+    @event true
+  )
+
   ; --------------------------------------------------------------------------
   ; Constants
 
@@ -117,11 +150,13 @@
   (defconst ACCOUNT_ID_MAX_LENGTH 256
     " Maximum character length for account IDs. ")
 
+  (defconst VALID_CHAIN_IDS (map (int-to-str 10) (enumerate 0 19))
+    "List of all valid Chainweb chain ids")
 
   ; --------------------------------------------------------------------------
   ; Utilities
 
-  (defun validate-account-id
+  (defun validate-account
     ( accountId:string )
 
     @doc " Enforce that an account ID meets charset and length requirements. "
@@ -204,7 +239,7 @@
              (property (valid-account-id accountId))
            ]
 
-    (validate-account-id accountId)
+    (validate-account accountId)
     (if (= accountId ROOT_ACCOUNT_ID) (require-capability (INTERNAL)) true)
     (enforce (> amount 0.0) "Debit amount must be positive.")
     (enforce-unit amount)
@@ -232,7 +267,7 @@
              (property (valid-account-id accountId))
            ]
 
-    (validate-account-id accountId)
+    (validate-account accountId)
     (enforce (> amount 0.0) "Credit amount must be positive.")
     (enforce-unit amount)
     (require-capability (CREDIT accountId))
@@ -255,32 +290,32 @@
           }))
       ))
 
-  (defun check-reserved:string (accountId:string)
+  (defun check-reserved:string (account:string)
     " Checks ACCOUNT for reserved name and returns type if \
     \ found or empty string. Reserved names start with a \
     \ single char and colon, e.g. 'c:foo', which would return 'c' as type."
-    (let ((pfx (take 2 accountId)))
+    (let ((pfx (take 2 account)))
       (if (= ":" (take -1 pfx)) (take 1 pfx) "")))
 
-  (defun enforce-reserved:bool (accountId:string guard:guard)
+  (defun enforce-reserved:bool (account:string guard:guard)
     @doc "Enforce reserved account name protocols."
-    (let ((r (check-reserved accountId)))
-      (if (= "" r) true
-        (if (= "k" r)
-          (enforce
-            (= (format "{}" [guard])
-               (format "KeySet {keys: [{}],pred: keys-all}"
-                       [(drop 2 accountId)]))
-            "Single-key account protocol violation")
-          (enforce false
-            (format "Unrecognized reserved protocol: {}" [r]))))))
+    (if (validate-principal guard account)
+      true
+      (let ((r (check-reserved account)))
+        (if (= r "")
+          true
+          (if (= r "k")
+            (enforce false "Single-key account protocol violation")
+            (enforce false
+              (format "Reserved protocol guard violation: {}" [r]))
+            )))))
 
   (defschema crosschain-schema
-    @doc " Schema for yielded value in cross-chain transfers "
+    @doc "Schema for yielded value in cross-chain transfers"
     receiver:string
     receiver-guard:guard
     amount:decimal
-  )
+    source-chain:string)
 
   (defpact transfer-crosschain:string
     ( sender:string
@@ -290,16 +325,16 @@
       amount:decimal )
 
     @model [ (property (> amount 0.0))
-             (property (!= receiver ""))
-             (property (valid-account-id sender))
-             (property (valid-account-id receiver))
+             (property (valid-account sender))
+             (property (valid-account receiver))
            ]
 
     (step
-      (with-capability (DEBIT sender)
+      (with-capability
+        (TRANSFER_XCHAIN sender receiver amount target-chain)
 
-        (validate-account-id sender)
-        (validate-account-id receiver)
+        (validate-account sender)
+        (validate-account receiver)
 
         (enforce (!= "" target-chain) "empty target-chain")
         (enforce (!= (at 'chain-id (chain-data)) target-chain)
@@ -310,35 +345,39 @@
 
         (enforce-unit amount)
 
-        ;; Step 1 - debit sender account on current chain
+        (enforce (contains target-chain VALID_CHAIN_IDS)
+          "target chain is not a valid chainweb chain id")
+
+        ;; step 1 - debit delete-account on current chain
         (debit sender amount)
+        (emit-event (TRANSFER sender "" amount))
 
         (let
-          ((
-            crosschain-details:object{crosschain-schema}
-            { "receiver"       : receiver
+          ((crosschain-details:object{crosschain-schema}
+            { "receiver" : receiver
             , "receiver-guard" : receiver-guard
-            , "amount"         : amount
-            }
-          ))
+            , "amount" : amount
+            , "source-chain" : (at 'chain-id (chain-data))
+            }))
           (yield crosschain-details target-chain)
-        )
-      )
-    )
+          )))
 
     (step
       (resume
-        { "receiver"       := receiver
+        { "receiver" := receiver
         , "receiver-guard" := receiver-guard
-        , "amount"         := amount
+        , "amount" := amount
+        , "source-chain" := source-chain
         }
-        ;; Step 2 - credit receiver account on target chain
+
+        (emit-event (TRANSFER "" receiver amount))
+        (emit-event (TRANSFER_XCHAIN_RECD "" receiver amount source-chain))
+
+        ;; step 2 - credit create account on target chain
         (with-capability (CREDIT receiver)
-          (credit receiver receiver-guard amount)
-        )
-      )
+          (credit receiver receiver-guard amount))
+        ))
     )
-  )
 
   (defun get-balance:decimal
     ( account:string )
@@ -385,7 +424,7 @@
 
     @model [ (property (valid-account-id account)) ]
 
-    (validate-account-id account)
+    (validate-account account)
     (enforce-reserved account guard)
 
     (insert token-table account

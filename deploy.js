@@ -29,7 +29,7 @@ const menuName = "Select a task:";
 const answers = await askQuestion(choices, menuName);
 switch (answers[menuName]) {
   case choices[0]:
-    await distributeGas();
+    distributeGas();
     break;
   case choices[1]:
     console.log('deploy keyset on all chains!');
@@ -178,7 +178,6 @@ async function deployModuleWizard(){
       case choices[1]:
         await readKeyset(State);
         await deployAllChains();
-        break;
       default:
         return;
     }
@@ -202,7 +201,8 @@ async function deployAllChains(code, data) {
 
 
   const promises = [];
-
+  let successful = true;
+  const result = [];
   for (let i = 0; i < 20; i++) {
     const API_HOST = `${State.HOST}/chainweb/0.0/${State.NETWORK_ID}/chain/${i}/pact`;
     const cmd = createCmd(State, pactCode, i, data);
@@ -217,9 +217,35 @@ async function deployAllChains(code, data) {
         console.log(`Listening chain${i} ..`);
         const txResult = await Pact.fetch.listen({ listen: response.requestKeys[0] }, API_HOST);
         console.log(`result chain${i}: ${JSON.stringify(txResult)}`);
+        if(txResult.result.status === 'success') {
+          result[i] = true;
+        } else {
+          result[i] = false;
+        }
+        if(result.length === 20 ) {
+          let finished = true;
+          let counter = 0;
+          console.log('result' + JSON.stringify(result));
+          while( finished && counter < 20) {
+            if(typeof result[counter] === 'undefined'){
+              finished = false;
+            } else {
+              if(!result[counter]) {
+                successful = false;
+              }
+            }
+            counter++;
+          }
+          if(finished){
+            console.log('deploy success: ' + successful);
+          }
+        }
       });
     }
   }
+  await Promise.all(promises).then(value => {
+    return value;
+  });
 }
 
 

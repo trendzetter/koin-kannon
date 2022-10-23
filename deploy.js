@@ -14,7 +14,7 @@ State.NETWORK_ID = 'testnet04';
 State.HOST = 'https://api.testnet.chainweb.com';
 State.gasPrice = 0.00000001;
 State.transferGas = 2500;
-State.codeFile = './module.pact';
+State.codeFile = './pact/module.pact';
 State.namespace = 'free';
 State.defaultPred = `${State.namespace}.fake-steak-preds.keys-majority`;
 State.keysetName;
@@ -217,7 +217,7 @@ async function deployAllChains(code, data) {
         console.log(`Listening chain${i} ..`);
         const txResult = await Pact.fetch.listen({ listen: response.requestKeys[0] }, API_HOST);
         console.log(`result chain${i}: ${JSON.stringify(txResult)}`);
-        if(txResult.result.status === 'success') {
+        if(txResult.result && txResult.result.status === 'success') {
           result[i] = true;
         } else {
           result[i] = false;
